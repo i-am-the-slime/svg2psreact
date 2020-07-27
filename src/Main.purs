@@ -1,13 +1,14 @@
 module Main where
 
 import Prelude
-
 import Data.Array (filter, last)
+import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (intercalate, null)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.String (Pattern(..), split, trim)
-import Data.String.Extra (camelCase)
+import Data.String as S
+import Data.String.Extra (camelCase, pascalCase)
 import Effect (Effect)
 import Effect.Class.Console (error)
 import Effect.Console (log)
@@ -16,7 +17,7 @@ import Node.FS.Sync as Sync
 import Node.Process (argv)
 import Svg.Parser (Element, SvgAttribute(..), SvgNode(..), parseToSvgNode)
 
-main :: Effect Unit
+main ∷ Effect Unit
 main = do
   arguments <- argv
   case last arguments of
@@ -24,60 +25,99 @@ main = do
       s <- Sync.readTextFile UTF8 fileName
       case parseToSvgNode s of
         Left e -> log (show e)
-        Right g -> log $ renderNode 4 g
+        Right g -> log $ header fileName <> renderNode 4 g
     Nothing -> error $ "Usage: node index.js pathToSvgFile"
 
+header ∷ String -> String
+header fileName =
+  "module Assets." <> moduleName
+    <> """ where
 
-renderNode :: Int -> SvgNode -> String
+import React.Basic (JSX)
+import React.Basic.DOM as R
+import React.Basic.DOM.SVG as SVG
+
+"""
+    <> varName
+    <> " :: JSX\n"
+    <> varName
+    <> " = "
+  where
+  sanitisedFileName = sanitiseFileName fileName
+  moduleName = pascalCase sanitisedFileName
+  varName = camelCase sanitisedFileName
+
+sanitiseFileName ∷ String -> String
+sanitiseFileName =
+  S.replaceAll (S.Pattern "\\") (S.Replacement "/")
+    <<< getLastSplit (S.Pattern "/")
+    <<< stripSuffixOrNot (S.Pattern ".svg")
+    <<< stripSuffixOrNot (S.Pattern ".SVG")
+    <<< S.trim
+    <<< S.replaceAll (S.Pattern " ") (S.Replacement "_")
+
+stripSuffixOrNot ∷ S.Pattern -> String -> String
+stripSuffixOrNot suffix s = fromMaybe s $ S.stripSuffix suffix s
+
+getLastSplit ∷ Pattern -> String -> String
+getLastSplit pattern s = fromMaybe s $ Array.last $ S.split pattern s
+
+renderNode ∷ Int -> SvgNode -> String
 renderNode depth = case _ of
   SvgElement el -> renderElement depth el
-  SvgText el -> el
+  SvgText el -> "R.text " <> quoted el
   SvgComment comment -> comment
 
-repeatS :: Int -> String -> String
-repeatS n s =
-  if n == 0 then s else s <> repeatS (n-1) s
+repeatS ∷ Int -> String -> String
+repeatS n s = if n == 0 then s else s <> repeatS (n - 1) s
 
-renderElement :: Int -> Element -> String
+renderElement ∷ Int -> Element -> String
 renderElement depth { name, attributes, children } =
-    name' <>
-    brkSpc <> "{ " <> attributes' <> children' <>
-    brkSpc <> "}"
-   where
-    spc = repeatS depth " "
-    brkSpc = "\n" <> spc
-    attrs = renderAttribute <$> attributes
-    kids = renderNode (depth + 2) <$> children
-    name' = "x = SVG." <> name
-    attributes' = intercalate (brkSpc <> ", ") attrs
-    commaBeforeChildren =
-      if null attrs || null children
-      then ""
-      else (brkSpc <> ", ")
-    children' = commaBeforeChildren <>
-      if null children
-      then ""
-      else ("children: " <> brkSpc <> "[ " <>
-        intercalate (brkSpc <> ", ") kids
-        <> brkSpc <> "]")
+  name'
+    <> brkSpc
+    <> "{ "
+    <> attributes'
+    <> children'
+    <> brkSpc
+    <> "}"
+  where
+  spc = repeatS depth " "
+  brkSpc = "\n" <> spc
+  attrs = renderAttribute <$> attributes
+  kids = renderNode (depth + 2) <$> children
+  name' = "SVG." <> name
+  attributes' = intercalate (brkSpc <> ", ") attrs
+  commaBeforeChildren =
+    if null attrs || null children then
+      ""
+    else
+      (brkSpc <> ", ")
+  children' =
+    commaBeforeChildren
+      <> if null children then
+          ""
+        else
+          "children: " <> brkSpc <> "[ "
+            <> intercalate (brkSpc <> ", ") kids
+            <> brkSpc
+            <> "]"
 
-quoted :: String -> String
+quoted ∷ String -> String
 quoted x = "\"" <> x <> "\""
 
-renderAttribute :: SvgAttribute -> String
+renderAttribute ∷ SvgAttribute -> String
 renderAttribute (SvgAttribute name value) = case name of
-  "style" ->
-    camelCase name <> ": " <> renderStyle value
-  _ ->
-    camelCase name <> ": " <> quoted value
+  "style" -> camelCase name <> ": " <> renderStyle value
+  "class" -> "className:" <> quoted value
+  _ -> camelCase name <> ": " <> quoted value
 
-renderStyle :: String -> String
-renderStyle style = "css { " <> styleAttrs <> " }"
+renderStyle ∷ String -> String
+renderStyle style = "R.css { " <> styleAttrs <> " }"
   where
-    styles = filter (eq " " || eq "\n") $ split (Pattern ";") style
-    toAttr x = case nameValue of
-      [name, value] -> camelCase (trim name) <> ": " <> quoted value
-      _ -> "\n -- ignored style: " <> "'" <> x <> "'" <> "\n"
-      where
-        nameValue = split (Pattern ":") x
-    styleAttrs = intercalate ", " (toAttr <$> styles)
+  styles = filter (eq " " || eq "\n") $ split (Pattern ";") style
+  toAttr x = case nameValue of
+    [ name, value ] -> camelCase (trim name) <> ": " <> quoted value
+    _ -> "\n -- ignored style: " <> "'" <> x <> "'" <> "\n"
+    where
+    nameValue = split (Pattern ":") x
+  styleAttrs = intercalate ", " (toAttr <$> styles)
