@@ -141,14 +141,14 @@ quoted x = "\"" <> x <> "\""
 
 renderAttribute ∷ SvgAttribute -> String
 renderAttribute (SvgAttribute name value) = case name of
-  "style" -> camelCase name <> ": " <> renderStyle value
+  "style" -> "style: " <> renderStyle value
   "class" -> "className:" <> quoted value
   _ -> camelCase name <> ": " <> quoted value
 
 renderStyle ∷ String -> String
 renderStyle style = "R.css { " <> styleAttrs <> " }"
   where
-  styles = filter (eq " " || eq "\n") $ split (Pattern ";") style
+  styles = filter (not (eq " " && eq "\n")) $ split (Pattern ";") style
   toAttr x = case nameValue of
     [ name, value ] -> camelCase (trim name) <> ": " <> quoted value
     _ -> "\n -- ignored style: " <> "'" <> x <> "'" <> "\n"

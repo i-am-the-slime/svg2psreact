@@ -1,6 +1,6 @@
 {
   "name": "svg2psreact",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Converts SVG files to their Purescript React Native representation",
   "main": "index.js",
   "directories": {
